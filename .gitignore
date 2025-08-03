@@ -37,4 +37,4 @@ out/
 .vscode/
 
 ### evn ###
-.evn
+.env
