@@ -1,8 +1,7 @@
 package example.transactions.service;
 
 import java.math.BigDecimal;
-
-import example.transactions.entity.Account;
+import example.transactions.model.Account;
 
 public interface AccountService {
     void withdraw(Account account, BigDecimal amout);
