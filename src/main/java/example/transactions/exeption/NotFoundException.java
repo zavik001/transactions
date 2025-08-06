@@ -1,4 +1,4 @@
-package example.transactions.exaption;
+package example.transactions.exeption;
 
 import java.text.MessageFormat;
 import java.util.function.Supplier;
