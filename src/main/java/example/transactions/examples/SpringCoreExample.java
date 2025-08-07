@@ -147,4 +147,5 @@ package example.transactions.examples;
 
 // => Spring Core = фундамент всей экосистемы Spring.
 public class SpringCoreExample {
+    // https://habr.com/ru/articles/490586/
 }

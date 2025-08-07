@@ -125,5 +125,8 @@ import example.transactions.model.Account;
 // └── Когда нужен контроль над SQL или высокая производительность
 
 // Наконец-то собрал полное дерево.Теперь можно посмотреть, как реализованы сами методы.
+
+// DAO (Data Access Object) - Это паттерн дизайна, который абстрагирует код, взаимодействующий
+// непосредственно с базой данных
 public interface SpringDataExample extends JpaRepository<Account, Long> {
 }
