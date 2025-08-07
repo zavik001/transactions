@@ -125,5 +125,5 @@ import example.transactions.model.Account;
 // └── Когда нужен контроль над SQL или высокая производительность
 
 // Наконец-то собрал полное дерево.Теперь можно посмотреть, как реализованы сами методы.
-public interface JpaExample extends JpaRepository<Account, Long> {
+public interface SpringDataExample extends JpaRepository<Account, Long> {
 }
