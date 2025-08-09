@@ -1,15 +1,16 @@
 package example.transactions.examples.helpers;
 
 import lombok.AllArgsConstructor;
-import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-@EqualsAndHashCode
 @Getter
 @AllArgsConstructor
 @NoArgsConstructor
-public class Person {
+public abstract class Animal implements Eating {
+
+    public static String CATEGORY = "domestic";
     private String name;
-    private int age;
+
+    protected abstract String getSound();
 }
