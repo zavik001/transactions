@@ -186,8 +186,60 @@ package example.transactions.examples;
 // | Shenandoah GC — Red Hat / OpenJDK docs. ([docs.redhat.com][5])
 // | Storage Management / TLAB — OpenJDK HotSpot docs. ([OpenJDK][1])
 // | Практические статьи про allocation, card table и remembered sets. ([InfoQ][6])
+//
+//
+//
+//
+// -Xms<size> и -Xmx<size>:
+// Устанавливают начальный (-Xms) и максимальный (-Xmx) размер кучи.
+// Например, -Xms512m -Xmx4g устанавливает начальный размер кучи в 512 мегабайт и максимальный в 4
+// гигабайта.
+
+// -XX:NewRatio=<ratio>:
+// Определяет соотношение между старым и молодым поколением в куче.
+// Например, -XX:NewRatio=2 означает, что старое поколение будет в два раза больше молодого.
+
+// -XX:SurvivorRatio=<ratio>:
+// Определяет соотношение между каждой из Survivor областей и Eden областью в молодом поколении.
+// Например, -XX:SurvivorRatio=8 означает, что Eden будет в 8 раз больше каждой из Survivor
+// областей.
+
+// -XX:MaxTenuringThreshold=<value>:
+// Устанавливает максимальное количество циклов сборки мусора, после которых объект из молодого
+// поколения перемещается в старое.
+// Более низкое значение означает более быстрое перемещение объектов в старое поколение.
+
+// -XX:+Use<Collector>:
+// Указывает, какой сборщик мусора использовать. Например, -XX:+UseG1GC, -XX:+UseParallelGC,
+// -XX:+UseConcMarkSweepGC.
+
+
+
+// Parallel GC:
+// -XX:ParallelGCThreads=<n>: Устанавливает количество потоков для сборки мусора в Parallel GC.
+
+// CMS (Concurrent Mark-Sweep):
+// -XX:CMSInitiatingOccupancyFraction=<percent>: Указывает процент заполнения кучи, при котором
+// начнется CMS cycle.
+// -XX:+UseCMSInitiatingOccupancyOnly: Указывает JVM использовать только заданный процент для начала
+// CMS cycle.
+
+// G1 GC:
+// -XX:MaxGCPauseMillis=<milliseconds>: Целевое значение для максимальной длительности паузы GC.
+// -XX:G1HeapRegionSize=<size>: Устанавливает размер региона в G1 GC.
+
+// ZGC:
+// -XX:ConcGCThreads=<n>: Количество потоков, используемых для параллельной обработки в ZGC.
+
+// Shenandoah:
+// -XX:ShenandoahGCHeuristics=<heuristic>: Определяет эвристику, которую Shenandoah будет
+// использовать.
+
+
+// VisualVM
 public class GCExample {
     // https://habr.com/ru/articles/269621/
     // https://shipilev.net/jvm/anatomy-quarks/4-tlab-allocation/?utm_source=chatgpt.com
     // https://habr.com/ru/companies/jugru/articles/846308/
+    // https://habr.com/ru/companies/otus/articles/776342/
 }
