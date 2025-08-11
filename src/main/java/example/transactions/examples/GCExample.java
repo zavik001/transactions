@@ -239,7 +239,7 @@ package example.transactions.examples;
 // VisualVM
 public class GCExample {
     // https://habr.com/ru/articles/269621/
-    // https://shipilev.net/jvm/anatomy-quarks/4-tlab-allocation/?utm_source=chatgpt.com
+    // https://shipilev.net/#shenandoah
     // https://habr.com/ru/companies/jugru/articles/846308/
     // https://habr.com/ru/companies/otus/articles/776342/
 }
