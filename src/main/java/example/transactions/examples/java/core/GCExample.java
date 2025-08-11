@@ -1,4 +1,4 @@
-package example.transactions.examples;
+package example.transactions.examples.java.core;
 
 // Garbage Collector (GC) — полный, подробный разбор
 // │
