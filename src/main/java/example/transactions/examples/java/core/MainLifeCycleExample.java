@@ -1,5 +1,6 @@
 package example.transactions.examples.java.core;
 
+// https://topjava.ru/blog/glubokoye-pogruzheniye-v-protsess-zapuska-jvm
 public class MainLifeCycleExample {
 
 }

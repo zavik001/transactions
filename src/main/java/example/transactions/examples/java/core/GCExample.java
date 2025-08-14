@@ -1,4 +1,6 @@
 package example.transactions.examples.java.core;
+// https://www.oracle.com/webfolder/technetwork/tutorials/obe/java/gc01/index.html
+
 
 // Garbage Collector (GC) — полный, подробный разбор
 // │
