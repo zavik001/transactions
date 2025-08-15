@@ -238,7 +238,221 @@ package example.transactions.examples.java.core;
 // использовать.
 
 
-// VisualVM
+
+// 1. Serial GC (-XX:+UseSerialGC, "обычный" до Java 7/8, default для client JVM)
+// Простой, 1 поток, полный STW. Подходит для малых apps. В JDK 24: cleanup/refactoring (нет больших
+// изменений).
+
+
+// - Зоны heap: Young (Eden + Survivor From/To), Old (Tenured). Metaspace отдельно.
+// - Что очищает: Minor — young; Major — old; Full — вся heap + metaspace (если нужно).
+// - Как очищает: Copying (young: копирует выжившие); Mark-Sweep-Compact (old: mark живые, sweep
+// мёртвые, compact фрагментацию).
+// - Сколько потоков: 1 GC-thread (serial).
+// - По шагам (minor GC пример):
+
+// 1. Инициирование GC: Когда Eden заполняется (allocation failure), JVM проверяет, нужно ли GC.
+// Если да — планирует остановку. Почему? Чтобы не тратить CPU зря. (Нет потоков — просто проверка.)
+// 2. STW: Остановка app-threads: Все потоки приложения (mutators) приводятся к safepoint
+// (безопасная точка, где нет полуисполненных операций). Это занимает ms, но гарантирует, что heap
+// не меняется. Почему? Если app продолжит, может создать объект или изменить ссылку, сломав
+// marking.
+// 3. Mark: Маркировка живых объектов: Один GC-thread начинает с roots (thread stacks, static
+// vars, registers). От roots рекурсивно сканирует достижимые объекты в young, помечая их как
+// "живые" (bit в header объекта). Почему young только? Minor GC фокусируется на новых объектах.
+// Аналогия: Уборщик отмечает "не выкидывать" на мебели, начиная от двери (roots).
+// 4. Copy: Копирование выживших: Выжившие (промаркированные) из Eden копируются в Survivor To;
+// из Survivor From — тоже в To (или в old, если объект "возраст" > threshold, по умолчанию 15).
+// Копирование компактное — объекты кладутся подряд, без фрагментации. Почему копирование? Young —
+// много мусора, копирование быстрее sweep.
+// 5. Sweep: Очистка: Eden и старый Survivor From обнуляются (память освобождается). Нет
+// компакта, т.к. copying уже сделало. Аналогия: Выкинуть всё немаркированное.
+// 6. Смена ролей survivors: To становится From, пустой From — To. Почему? Чтобы чередовать и
+// избегать фрагментации.
+// 7. Конец STW: App-threads размораживаются, продолжают. JVM обновляет stats (для будущих GC).
+
+// Для major/full: Аналогично, но mark-sweep-compact на old (compact сдвигает объекты, чтобы убрать
+// дыры).
+// - STW и потоки: Полный STW, потому что без него app мутирует heap, ломая marking. С 10
+// app-threads: все стоп, пока 1 GC работает. Почему не фон? Не concurrent — нет barriers.
+
+// - Визуализация (timeline, A1-A10: app-threads, G: GC):
+//
+// Время: 0 ----------------> GC start ----------------> GC end
+// A1-A10: Работают... [STW: заморожены] Продолжают...
+// G: (спит) Mark -> Copy -> Sweep (спит)
+//
+
+// - Аналогия: Один уборщик (G) стопит всех (A), иначе хаос. Паузы длинные (секунды на big
+// heap).
+// - Плюсы/минусы: Просто, низкий overhead. Минус: длинные паузы.
+
+
+
+// 2. Parallel GC (-XX:+UseParallelGC, default server до Java 8)
+// Много потоков для ускорения, но STW. Смысл vs Serial: паузы короче (параллелизм). В JDK 24:
+// убрана синхронизация в evacuation (JDK-8269870, меньше пауз).
+
+// - Зоны heap: Young (Eden + 2 survivors), Old.
+// - Что очищает: Minor — young; Major — old (parallel compact); Full — всё.
+// - Как очищает: Copying (young, parallel); Mark-Sweep-Compact (old, parallel).
+// - Сколько потоков: Несколько GC-threads (~cores, -XX:ParallelGCThreads=N).
+// - По шагам (minor GC):
+
+// 1. Инициирование GC: Eden full — JVM триггерит, выбирает N GC-threads (по cores). Почему?
+// Чтобы распределить нагрузку.
+// 2. STW: Остановка app: Как в Serial, все mutators к safepoint. Почему? Parallel GC не
+// concurrent — изменения от app сломают синхронизацию между GC-threads.
+// 3. Mark: Параллельная маркировка: GC-threads делят roots (каждый берёт часть stacks). Затем
+// parallel сканируют graph: один thread маркирует subtree, если большой — делит на work items.
+// Barriers нет, т.к. STW. Аналогия: Уборщики делят комнату на секции, отмечают параллельно.
+// 4. Copy: Параллельное копирование: Threads делят young на chunks, копируют выжившие в To/old
+// atomic'но (locks на целевые области). Выжившие компактны. Почему parallel? Ускоряет на
+// multi-core.
+// 5. Sweep: Параллельная очистка: Threads очищают свои chunks в Eden/From (обнуляют pointers).
+// 6. Смена ролей survivors: Синхронизировано, все threads ждут.
+// 7. Конец STW: App возобновляется. В JDK 25: Оптимизирована evacuation (меньше sync).
+
+// Для major: Parallel compact — threads делят old на регионы, compact каждый свой.
+// - STW и потоки: STW нужен для consistency — app не мешает parallel работе GC. С 10
+// app-threads: все стоп, но GC быстрее.
+// - Визуализация (G1-G4: GC-threads):
+
+//
+// Время: 0 ----------------> GC start ----------------> GC end
+// A1-A10: Работают... [STW: заморожены] Продолжают...
+// G1-G4: (спят) Mark/Copy зона1-4 parallel (спят)
+//
+
+// - Аналогия: Несколько уборщиков делят комнату, но стопят людей — иначе зоны сломаются. Паузы
+// ~сотни ms.
+// - Плюсы/минусы: Высокий throughput. Минус: STW не для low-latency.
+
+
+
+// 3. G1 GC (-XX:+UseG1GC, default с Java 9)
+// Региональный, concurrent marking, STW evacuation. Цель: паузы <200ms. В JDK 24: улучшения
+// predictor/memory (JDK-8343189/8336086), late barriers (JEP 475) — меньше компиляции, лучше
+// ordering.
+
+// - Зоны heap: ~2000 регионов (1-32MB, dynamic young/old/humongous).
+// - Что очищает: Mixed (young + часть old); Full (fallback).
+// - Как очищает: Evacuation (copying регионов); Concurrent marking.
+// - Сколько потоков: Несколько (parallel STW, concurrent marking).
+// - По шагам:
+
+// 1. Initial Mark (STW, короткий): Останавливает app ненадолго (ms). Маркирует roots (stacks,
+// etc.), часто пиггибек на minor GC. Почему STW? Roots могут измениться, нужно snapshot. Аналогия:
+// Быстрый "стоп" для фото корней.
+// 2. Concurrent Marking: App работает! GC-threads (parallel) маркируют от roots весь graph в
+// old регионах. Write barriers (в app-коде) ловят изменения: если app меняет ссылку, barrier
+// добавляет в card table (dirty cards для rescanning). Почему concurrent? Barriers корректируют на
+// лету. В JDK 25: Late barriers (JEP 475) — barriers компилируются позже, меньше overhead.
+// 3. Remark (STW, короткий): Стоп app, финализирует marking: rescans dirty cards, учитывает
+// SATB (snapshot-at-the-beginning) для consistency. Почему STW? Чтобы поймать последние изменения
+// atomic'но.
+// 4. Cleanup (STW/Concurrent): Concurrent: Очищает полностью мёртвые регионы (reclaim без
+// copy). STW: Обновляет stats (livability регионов для будущего).
+// 5. Evacuation (Mixed GC, STW): Выбирает регионы с max garbage (young + old по priority). STW:
+// GC-threads parallel копируют выжившие в пустые регионы (evacuation). Young полностью, old
+// инкрементально. Почему STW? Copy меняет адреса — app не должен видеть halfway. Аналогия:
+// Эвакуация людей в новые комнаты, пока все стоп.
+// 6. Full GC (fallback, STW): Если heap full — как Parallel: full mark-sweep-compact.
+
+// G1 балансирует: Predictor (улучшен в JDK 25) предсказывает паузы.
+// - STW и потоки: Marking concurrent (barriers ловят изменения), evacuation STW (short). С 10
+// app-threads: минимальные стопы.
+// - Визуализация:
+
+//
+// Время: 0 ----------------> GC cycle ----------------> End
+// A1-A10: Работают... Работают (barriers)... Работают...
+// G-threads: (спят) Concurrent Mark... (спят)
+// (Short STW: ~ms для evacuation)
+//
+
+// - Аналогия: Уборщики убирают фонно, люди с датчиками (barriers) сигнализируют изменения.
+// Минимальные стопы.
+// - Плюсы/минусы: Низкие паузы, big heap. Минус: overhead > Parallel.
+
+
+
+// 4. ZGC (-XX:+UseZGC, с Java 11, stable 15)
+// Ultra-low-pause, concurrent almost всё. Нет поколений. В JDK 24: удаление non-generational (JEP
+// 490) — только generational теперь.
+
+// - Зоны heap: Регионы (zPages, 2MB-16GB, dynamic).
+// - Что очищает: Вся heap concurrent (циклы, нет minor/major).
+// - Как очищает: Load barriers (обновляют pointers); Concurrent relocation.
+// - Сколько потоков: Несколько (concurrent/parallel).
+// - По шагам:
+
+// 1. Pause Mark Start (STW, ms): Короткий стоп app (sub-ms в JDK 25). Маркирует roots (stacks,
+// registers, globals). Почему STW? Roots — критично, изменения сломают. Load barriers активированы.
+// Аналогия: Быстрый стоп для маркировки "входов" в комнату.
+// 2. Concurrent Mark: App работает. GC-threads parallel маркируют graph от roots, используя
+// colored pointers (в pointers биты: good/bad/remapped). Load barriers в app: при чтении pointer,
+// если bad color — GC фиксирует (heal). Barriers обновляют marking на лету. Почему concurrent?
+// Barriers обеспечивают consistency без стоп. В generational: Отдельная marking для young/old.
+// 3. Pause Mark End (STW, ms): Короткий стоп: Финализирует marking, rescans барьеры, обновляет
+// livemap (bitmap живых объектов по регионам). Почему STW? Atomic завершение, чтобы избежать races.
+// 4. Concurrent Prepare Relocate: App работает. GC подготавливает: Выбирает регионы для
+// relocation (с garbage), создаёт forwarding tables (new addresses). Parallel по threads. Почему
+// concurrent? Нет изменений адресов yet.
+// 5. Pause Relocate Start (STW, ms): Стоп: Relocates roots (обновляет pointers в stacks к новым
+// адресам). Почему STW? Roots sensitive — app не должен исполняться.
+// 6. Concurrent Relocate: App работает. GC-threads relocate объекты: Копируют в новые регионы,
+// используя colored pointers (app видит старые, barrier redirect к новым). Lazy relocation: Не все
+// сразу, только accessed. Почему concurrent? Barriers handle: При access, app/G C cooperate.
+// Аналогия: Переезд мебели, пока люди ходят — датчики (colors) перенаправляют.
+// 7. Concurrent Remap: App работает. Обновляет все pointers на новые (remap phase). Barriers
+// помогают: Lazy remap при access. Завершает цикл, очищает старые регионы. В JDK 25: Оптимизировано
+// для generational (young relocate быстрее).
+
+// - STW и потоки: Почти без STW (<10ms), barriers обеспечивают. App работает nonstop.
+// - Визуализации:
+// (как в G1, но micro-STW).
+
+// - Аналогия: Умные уборщики с датчиками, минимальные миг-стопы.
+// - Плюсы/минусы: Минимальные паузы, huge heap. Минус: CPU/memory overhead.
+
+
+
+// 5. Shenandoah GC (-XX:+UseShenandoahGC, с Java 12, от Red Hat)
+// Concurrent, low-pause, forwarding pointers. В JDK 24: generational experimental (JEP 404) — лучше
+// throughput/resilience. В JDK 25: stable.
+
+// - Зоны heap: Регионы (~2MB, dynamic, no generations в non-gen; generational в new).
+// - Что очищает: Вся heap concurrent (циклы).
+// - Как очищает: Concurrent evacuation (copy); Brooks pointers.
+// - Сколько потоков: Несколько (concurrent/parallel).
+// - По шагам:
+
+// 1. Init Mark (STW, короткий): Стоп app (ms). Маркирует roots. Почему STW? Snapshot roots.
+// 2. Concurrent Marking: App работает. GC маркирует graph, write barriers ловят изменения
+// (добавляют в queue для rescanning). Brooks pointers (forwarding: extra word в объекте для new
+// address). Почему concurrent? Barriers + forwarding consistency.
+// 3. Final Mark (STW): Стоп: Финализирует marking, evacuates roots (обновляет их pointers).
+// Rescans queues. Почему STW? Atomic evac roots.
+// 4. Concurrent Evacuation: App работает. GC копирует живые объекты в новые регионы, обновляет
+// forwarding pointers. Barriers: При access, app видит forwarding и redirect. Parallel threads.
+// Почему concurrent? Forwarding позволяет app видеть updates. В generational: Young evac быстрее.
+// 5. Update Refs (STW/Concurrent): Concurrent: Обновляет references (pointers) на новые адреса.
+// STW если нужно для финала. Barriers помогают lazy update.
+// 6. Concurrent Cleanup: Очищает старые регионы (reclaim память). Почему concurrent? Регионы
+// уже пусты после evac.
+// 7. Full GC (fallback, STW): Редко, как Parallel.
+
+// - STW и потоки: Почти concurrent, barriers/forwarding. <10ms паузы.
+// - Визуализация:
+// (как в G1, но micro-STW).
+
+// - Аналогия: Уборщики с перенаправлениями, люди не замечают.
+// - Плюсы/минусы: Низкие паузы, хороший throughput. Минус: barriers overhead.
+
+
+
+// VisualVM + visualGC
 public class GCExample {
     // https://habr.com/ru/articles/269621/
     // https://shipilev.net/#shenandoah
