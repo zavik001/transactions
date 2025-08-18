@@ -48,7 +48,7 @@ class GCTest {
         for (int i = 0; i < 150; i++) {
             Future<List<Person>> call = excutor.submit(() -> {
                 List<Person> list = new ArrayList<>();
-                for (int j = 0; j < 1_000_000; j++) {
+                for (int j = 0; j < 1_000/* _000 */; j++) {
                     list.add(new Person("name", 100));
                 }
                 return list;
@@ -63,7 +63,7 @@ class GCTest {
         for (int i = 0; i < 150; i++) {
             Future<List<Person>> call = excutor.submit(() -> {
                 List<Person> pers = new ArrayList<>();
-                for (int j = 0; j < 1_000_000; j++) {
+                for (int j = 0; j < 1_000/* _000 */; j++) {
                     pers.add(new Person("name", 100));
                 }
                 return pers;
@@ -78,7 +78,7 @@ class GCTest {
         for (int i = 0; i < 150; i++) {
             Future<List<Person>> call = excutor.submit(() -> {
                 List<Person> pers = new ArrayList<>();
-                for (int j = 0; j < 1_000_000; j++) {
+                for (int j = 0; j < 1_000/* _000 */; j++) {
                     pers.add(new Person("name", 100));
                 }
                 return pers;

@@ -24,6 +24,7 @@ import java.io.RandomAccessFile;
 import java.io.Reader;
 import java.io.Writer;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.AsynchronousFileChannel;
@@ -377,7 +378,7 @@ class IOnewIOTest {
     @Test
     void NIO_byteBufferOps() {
         ByteBuffer buf = ByteBuffer.allocate(16);
-        buf.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        buf.order(ByteOrder.LITTLE_ENDIAN);
         buf.putInt(0x01020304);
         buf.mark();
         buf.put((byte) 0x7F);
@@ -385,7 +386,7 @@ class IOnewIOTest {
         assertEquals((byte) 0x7F, buf.get()); // overwrote
         buf.flip();
         int v = buf.getInt();
-        assertEquals(0x04030201, v); // LE
+        assertEquals(0x01020304, v); // LE
     }
 
     @Test
