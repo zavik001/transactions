@@ -2,7 +2,10 @@ package example.transactions;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -11,16 +14,42 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.io.RandomAccessFile;
 import java.io.Reader;
 import java.io.Writer;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.AsynchronousFileChannel;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.List;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import example.transactions.examples.helpers.Person;
 
 // JAVA IO & NEW IO
 
@@ -241,6 +270,253 @@ class IOnewIOTest {
             assertEquals(90, dis.readInt());
             assertEquals(Math.TAU, dis.readDouble());
             assertEquals("javaIO", dis.readUTF());
+        }
+    }
+
+    @Test
+    void IO_objectSerialization() throws Exception {
+        Path dir = tempDir();
+        Path file = dir.resolve("person.ser");
+        Person p = new Person("Java", 10);
+
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(file.toFile()))) {
+            oos.writeObject(p);
+        }
+
+        Person copy;
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file.toFile()))) {
+            copy = (Person) ois.readObject();
+        }
+
+        assertEquals("Java", copy.getName());
+        assertEquals(10, copy.getAge());
+    }
+
+    @Test
+    void IO_ramdomAccessFile() throws Exception {
+        Path dir = tempDir();
+        Path file = dir.resolve("raf.bin");
+
+        try (RandomAccessFile raf = new RandomAccessFile(file.toFile(), "rwd")) {
+            raf.writeInt(10);
+            raf.writeLong(12);
+            raf.seek(0);
+            assertEquals(10, raf.readInt());
+            raf.seek(4);
+            assertEquals(12, raf.readLong());
+        }
+    }
+
+    @Test
+    // +_
+    void IO_pipedStreams() throws Exception {
+        PipedOutputStream pos = new PipedOutputStream();
+        PipedInputStream pis = new PipedInputStream(pos);
+
+        String msg = "ping-pong";
+
+        Thread producer = Thread.ofVirtual().start(() -> {
+            try (pos) {
+                pos.write(msg.getBytes(UTF8));
+            } catch (IOException e) {
+            }
+        });
+
+        byte[] buf = new byte[64];
+        int n = pis.read(buf);
+
+        String s = new String(buf, 0, n, UTF8);
+        assertEquals(msg, s);
+        producer.join();
+    }
+
+    @Test
+    void NIO_pathFilesBasics() throws Exception {
+        Path dir = tempDir();
+        Path a = dir.resolve("a.txt");
+        Path b = dir.resolve("b.txt");
+
+        Files.writeString(a, "Java NIO", UTF8);
+        assertTrue(Files.exists(a));
+        assertEquals("Java NIO", Files.readString(a, UTF8));
+
+        Files.copy(a, b);
+        assertEquals(-1L, Files.mismatch(a, b)); // identical
+
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            Files.setPosixFilePermissions(a, PosixFilePermissions.fromString("rw-r--r--"));
+        }
+
+        BasicFileAttributes attrs = Files.readAttributes(a, BasicFileAttributes.class);
+        assertFalse(attrs.isDirectory());
+    }
+
+    @Test
+    void NIO_fileChannelReadWrite() throws Exception {
+        Path dir = tempDir();
+        Path f = dir.resolve("channel.bin");
+        byte[] payload = "ChannelWrite".getBytes(UTF8);
+
+        try (FileChannel ch =
+                FileChannel.open(f, StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+            ByteBuffer buf = ByteBuffer.allocate(64);
+            buf.put(payload);
+            buf.flip();
+            assertEquals(payload.length, ch.write(buf));
+        }
+        try (FileChannel ch = FileChannel.open(f, StandardOpenOption.READ)) {
+            ByteBuffer buf = ByteBuffer.allocate(64);
+            int n = ch.read(buf);
+            buf.flip();
+            byte[] got = new byte[n];
+            buf.get(got);
+            assertArrayEquals(payload, got);
+        }
+    }
+
+    @Test
+    void NIO_byteBufferOps() {
+        ByteBuffer buf = ByteBuffer.allocate(16);
+        buf.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(0x01020304);
+        buf.mark();
+        buf.put((byte) 0x7F);
+        buf.reset(); // back to mark
+        assertEquals((byte) 0x7F, buf.get()); // overwrote
+        buf.flip();
+        int v = buf.getInt();
+        assertEquals(0x04030201, v); // LE
+    }
+
+    @Test
+    void NIO_scatterGather() throws Exception {
+        Path dir = tempDir();
+        Path f = dir.resolve("sg.bin");
+        try (FileChannel out =
+                FileChannel.open(f, StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+            ByteBuffer h = ByteBuffer.wrap("HEAD".getBytes(UTF8));
+            ByteBuffer b = ByteBuffer.wrap("BODY".getBytes(UTF8));
+            out.write(new ByteBuffer[] {h, b});
+        }
+        try (FileChannel in = FileChannel.open(f, StandardOpenOption.READ)) {
+            ByteBuffer h = ByteBuffer.allocate(4);
+            ByteBuffer b = ByteBuffer.allocate(4);
+            in.read(new ByteBuffer[] {h, b});
+            h.flip();
+            b.flip();
+            assertEquals("HEAD", new String(h.array(), UTF8));
+            assertEquals("BODY", new String(b.array(), UTF8));
+        }
+    }
+
+    @Test
+    void NIO_zeroCopyTransfer() throws Exception {
+        Path dir = tempDir();
+        Path src = dir.resolve("src.bin");
+        Path dst = dir.resolve("dst.bin");
+        Files.write(src, "ZERO".getBytes(UTF8));
+        try (FileChannel in = FileChannel.open(src, StandardOpenOption.READ);
+                FileChannel out = FileChannel.open(dst, StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE)) {
+            long transferred = in.transferTo(0, in.size(), out);
+            assertEquals(in.size(), transferred);
+        }
+        assertEquals("ZERO", Files.readString(dst, UTF8));
+    }
+
+    @Test
+    void NIO_memoryMappedFile() throws Exception {
+        Path dir = tempDir();
+        Path f = dir.resolve("mapped.bin");
+        try (FileChannel ch = FileChannel.open(f, StandardOpenOption.CREATE,
+                StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+            MappedByteBuffer map = ch.map(FileChannel.MapMode.READ_WRITE, 0, 16);
+            map.put(0, (byte) 0x7A);
+            map.put(1, (byte) 0x7B);
+            map.force();
+        }
+        byte[] bytes = Files.readAllBytes(f);
+        assertEquals(0x7A, bytes[0] & 0xFF);
+        assertEquals(0x7B, bytes[1] & 0xFF);
+    }
+
+    @Test
+    @Timeout(2)
+    void NIO_fileLock() throws Exception {
+        Path dir = tempDir();
+        Path f = dir.resolve("lock.bin");
+        Files.write(f, new byte[32]);
+        try (FileChannel ch =
+                FileChannel.open(f, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+            try (FileLock lock = ch.lock(0, 16, false)) {
+                assertTrue(lock.isValid());
+            }
+        }
+    }
+
+    @Test
+    void NIO_charsetEncodeDecode() {
+        String s = "Русский текст жава";
+        var enc = UTF8.newEncoder();
+        var dec = UTF8.newDecoder();
+        try {
+            ByteBuffer bb = enc.encode(CharBuffer.wrap(s));
+            String decoded = dec.decode(bb).toString();
+            assertEquals(s, decoded);
+        } catch (Exception e) {
+            fail(e);
+        }
+    }
+
+    @Test
+    void NIO_asyncFileChannel() throws Exception {
+        Path dir = tempDir();
+        Path f = dir.resolve("async.txt");
+        Files.writeString(f, "Async NIO", UTF8);
+        ByteBuffer buf = ByteBuffer.allocate(32);
+        try (AsynchronousFileChannel ch =
+                AsynchronousFileChannel.open(f, StandardOpenOption.READ)) {
+            Future<Integer> fut = ch.read(buf, 0);
+            int n = fut.get(2, TimeUnit.SECONDS);
+            assertTrue(n > 0);
+            buf.flip();
+            byte[] got = new byte[n];
+            buf.get(got);
+            assertEquals("Async NIO", new String(got, UTF8));
+        }
+    }
+
+    @Test
+    @Timeout(5)
+    void NIO_watchServiceCreate() throws Exception {
+        Path dir = tempDir();
+        try (WatchService ws = FileSystems.getDefault().newWatchService()) {
+            dir.register(ws, StandardWatchEventKinds.ENTRY_CREATE);
+            Path created = dir.resolve("watched.txt");
+            Files.writeString(created, "watch", UTF8);
+            WatchKey key = ws.poll(1, TimeUnit.SECONDS);
+            assertNotNull(key);
+            List<Path> createdNames = key.pollEvents().stream()
+                    .filter(ev -> ev.kind() == StandardWatchEventKinds.ENTRY_CREATE)
+                    .map(ev -> (Path) ev.context()).collect(Collectors.toList());
+            key.reset();
+            assertTrue(createdNames.contains(Path.of("watched.txt")));
+        }
+    }
+
+    @Test
+    void NIO_channelsAdapters() throws Exception {
+        Path dir = tempDir();
+        Path f = dir.resolve("bridge.txt");
+        Files.writeString(f, "bridge", UTF8);
+        try (InputStream is = Files.newInputStream(f)) {
+            ReadableByteChannel ch = Channels.newChannel(is);
+            ByteBuffer bb = ByteBuffer.allocate(16);
+            int n = ch.read(bb);
+            bb.flip();
+            byte[] got = new byte[n];
+            bb.get(got);
+            assertEquals("bridge", new String(got, UTF8));
         }
     }
 }

@@ -1,5 +1,6 @@
 package example.transactions.examples.helpers;
 
+import java.io.Serializable;
 import lombok.AllArgsConstructor;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -9,7 +10,7 @@ import lombok.NoArgsConstructor;
 @Getter
 @AllArgsConstructor
 @NoArgsConstructor
-public class Person {
+public class Person implements Serializable {
     private String name;
     private int age;
 }
