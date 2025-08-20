@@ -56,7 +56,7 @@ class GCTest {
             persons.add(call.get());
         }
 
-        Thread.sleep(10000);
+        // Thread.sleep(10000);
         persons = null;
 
         List<List<Person>> personss = new ArrayList<>();
@@ -72,7 +72,7 @@ class GCTest {
         }
 
         personss = null;
-        Thread.sleep(10000);
+        // Thread.sleep(10000);
 
         List<List<Person>> personsss = new ArrayList<>();
         for (int i = 0; i < 150; i++) {
@@ -87,11 +87,11 @@ class GCTest {
         }
 
         personsss = null;
-        Thread.sleep(10000);
+        // Thread.sleep(10000);
 
         excutor.shutdown();
-        Thread.sleep(10000);
+        // Thread.sleep(10000);
         System.gc();
-        Thread.sleep(10000);
+        // Thread.sleep(10000);
     }
 }
