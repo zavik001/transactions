@@ -39,6 +39,90 @@ package example.transactions.examples.java.core;
 // │ │ │ │ java.net) для работы c данными, файлами, сетью.
 // │ │ ├── Утилиты для создания и анализа кода.
 // │ │ ├── Компиляция (javac), документация (javadoc), архивация (jar), мониторинг (jcmd, jmap).
+
+
+
+// JVM Implementations
+// │
+// ├── 1. HotSpot JVM (Oracle/OpenJDK)
+// │ ├── Description: Основная и самая популярная реализация JVM, включена в Oracle JDK и OpenJDK.
+// │ │ Открытый исходный код, фокус на производительности и оптимизациях.
+// │ ├── Плюсы: Отличный JIT (C1/C2 компиляторы), GC (G1, ZGC, Shenandoah, ..), поддержка AOT через
+// │ │ GraalVM интеграцию.
+// │ ├── Минусы: Может потреблять больше памяти на старте.
+// │ └── Где используется: Серверы, десктопы, облака (AWS, Azure).
+// │
+// ├── 2. Eclipse OpenJ9 (IBM/Eclipse)
+// │ ├── Description: Альтернативная открытая JVM, оптимизирована для низкого потребления памяти и
+// │ │ быстрого старта. Поддерживает те же спецификации, что и HotSpot.
+// │ ├── Плюсы: Эффективный GC (GenCon, Balanced), подходит для контейнеров (Kubernetes) и IoT.
+// │ ├── Минусы: Меньше оптимизаций для долгоживущих high-load приложений.
+// │ └── Где используется: Enterprise-системы (IBM Cloud), embedded устройства.
+// │
+// ├── 3. GraalVM (Oracle)
+// │ ├── Description: Расширенная JVM с поддержкой полиglot (Java + другие языки), AOT-компиляцией в
+// │ │ нативные бинарники. Базирована на HotSpot/OpenJDK.
+// │ ├── Плюсы: Native Image для супербыстрого старта (миллисекунды), продвинутый JIT (Graal
+// │ │ compiler), интеграция с Truffle для других языков.
+// │ ├── Минусы: Сложнее в настройке, возможны проблемы совместимости.
+// │ └── Где используется: Микросервисы, serverless (Lambda), многоязычные приложения.
+// │
+// ├── 4. Azul Platform Core/Prime (Azul Systems)
+// │ ├── Description: Коммерческая JVM на базе OpenJDK с улучшениями. Zulu — бесплатная версия,
+// │ │ Zing/Prime — платная с low-latency фичам.
+// │ ├── Плюсы: Низкие паузы GC (C4 в Prime), высокая стабильность, сертификация для enterprise.
+// │ ├── Минусы: Платные версии дорогие.
+// │ └── Где используется: Финансовые системы, high-frequency trading, критические приложения.
+// │
+// ├── 5. Другие реализации
+// │ ├── Android Runtime (ART): Не чистая JVM, но аналог для Android (AOT/JIT компиляция Dalvik/ART
+// │ │ bytecode).
+// │ ├── Amazon Corretto: Бесплатная OpenJDK-based от AWS, с долгосрочной поддержкой.
+// │ ├── IBM Semeru Runtime: Включает OpenJ9, для enterprise.
+// │ └── Устаревшие/нишевые: Avian (легковесная), Excelsior JET (AOT-focused, discontinued).
+// │
+// └── Итого:
+// ├── Все реализации следуют JVM Specification, обеспечивая совместимость байткода.
+// ├── Выбор зависит от сценария: HotSpot для универсальности, OpenJ9 для экономии ресурсов, GraalVM
+// │ │ для скорости старта.
+// ├── LTS версии Java (8,11,17,21,25) имеют долгую поддержку; non-LTS (как 24) — для тестов новых
+// │ │ фич.
+
+// 1. JIT & HotSpot оптимизации
+// Как JIT компилирует горячие методы в машинный код.
+// Inline expansion, escape analysis, loop unrolling.
+// Tiered compilation (C1/C2 компиляторы).
+// Как посмотреть JIT-лог (-XX:+UnlockDiagnosticVMOptions -XX:+PrintCompilation).
+
+// 2. Memory Model (JMM)
+// Happens-before правила.
+// Visibility и ordering.
+// Почему volatile — это не просто "без кеша".
+// Как JMM гарантирует корректность между потоками.
+
+// 3. Мониторы и синхронизация
+// Монитор в байткоде (monitorenter / monitorexit).
+// Biased Locking, Lightweight Locking, Lock Elision.
+// Как синхронизация оптимизируется под капотом.
+
+// 4. Native Interface
+// JNI (Java C/C++).
+// JNA и Panama (новое API для нативных вызовов).
+
+// 5. JVM internals utilities
+// jcmd, jmap, jstack, jconsole, jvisualvm.
+// Heap dump анализ (Eclipse MAT).
+
+// 6. Class Data Sharing (CDS) / AppCDS
+// Как JVM кеширует предзагруженные классы между запусками.
+
+// 7. Flight Recorder / Mission Control
+// Профайлинг и диагностика производительности.
+
+// 8. Bytecode Engineering
+// Чтение и правка байткода (javap, ASM, ByteBuddy).
+// Генерация классов на лету.
+
 public class JDKExample {
 
 }
